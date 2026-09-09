@@ -1,0 +1,62 @@
+root_path: /home/hank/TWIST/track_dataset/twist_motion_dataset
+motions:
+- file: mydata/1.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/2.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/3.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/4.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/5.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/6.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/7.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/8.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/9.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/10.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/11.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/12.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/13.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/14.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/15.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/16.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/17.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/18.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/19.pkl
+  weight: 150.0
+  description: general movement
+- file: mydata/20.pkl
+  weight: 150.0
+  description: general movement

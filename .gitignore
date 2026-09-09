@@ -1,0 +1,70 @@
+isaacgym*
+.ipynb_checkpoints/
+.vscode/
+*img
+*__pycache__*
+fbx/
+cmu_fbx_all/
+*zip
+*ipynb
+npy
+pkl
+phc/
+
+track_dataset/
+
+*.log
+
+debug.mp4
+
+MUJOCO_LOG.TXT
+
+for_joao/
+
+data_recorded/
+
+PythonClient/
+
+avp_teleoperate/
+
+unitree_IL_lerobot/
+
+retarget_lib/
+
+body_models/
+
+joao_data/
+# Claude
+.claude/
+
+# Data files (large)
+*.pkl
+track_dataset/
+motion/
+
+# SDK folders
+ViconDataStreamSDK*/
+unitree_sdk2_python/
+vicon_sdk/
+
+# Debug/intermediate scripts
+deploy_real/diag_arms*.py
+deploy_real/server_motion_optitrack_gmr_v3.py
+deploy_real/server_motion_optitrack_gmr_v4.py
+deploy_real/server_motion_optitrack_gmr_arm_safe.py
+deploy_real/server_motion_optitrack_gmr_stable.py
+
+# Checkpoints and traced models (large files)
+*.pt
+*.pth
+legged_gym/logs/
+
+# Lock files
+*.lock
+
+# Deploy logs
+deploy_real/logs/
+
+# External patches / notes
+_external_patches/
+patch_notes/
