@@ -178,6 +178,7 @@ def main(args, xml_file, robot_base):
     sim_ready_key = f"sim_ready_{args.robot}"
     if args.wait_for_sim_ready:
         redis_client.delete(sim_ready_key)
+        redis_client.delete(f"action_mimic_frame_{args.robot}")
 
     # 2. Load motion library
     device = (
@@ -268,6 +269,7 @@ def main(args, xml_file, robot_base):
     )
 
     last_mimic_obs = DEFAULT_MIMIC_OBS[args.robot]
+    last_clean_mimic_obs = DEFAULT_MIMIC_OBS[args.robot].copy()
     vis_root_vel = False
     vis_root_ang_vel = False
     if vis_root_vel:
@@ -283,6 +285,12 @@ def main(args, xml_file, robot_base):
                 print(f"[Motion Server] Loop {loop_idx}...")
             for t_step in range(num_steps):
                 t0 = time.time()
+                if args.wait_for_sim_ready:
+                    deadline = time.monotonic() + args.sim_ready_timeout
+                    while int(redis_client.get(sim_ready_key) or -1) < global_frame_id:
+                        if time.monotonic() > deadline:
+                            raise TimeoutError('MuJoCo stopped requesting reference frames')
+                        time.sleep(0.001)
 
                 # Build a mimic obs from the motion library
                 mimic_obs, root_pos, root_rot, dof_pos, root_vel, root_ang_vel = build_mimic_obs(
@@ -298,6 +306,7 @@ def main(args, xml_file, robot_base):
                 mimic_obs = DEFAULT_MIMIC_OBS[args.robot] + args.motion_scale * (
                     mimic_obs - DEFAULT_MIMIC_OBS[args.robot]
                 )
+                clean_mimic_obs = mimic_obs.copy()
                 mimic_obs = process_mimic_reference(
                     mimic_obs,
                     args.reference_mode,
@@ -311,9 +320,14 @@ def main(args, xml_file, robot_base):
 
                 # Convert to JSON (list) to put into Redis
                 mimic_obs_list = mimic_obs.tolist() if mimic_obs.ndim == 1 else mimic_obs.flatten().tolist()
-                redis_client.set(f"action_mimic_{args.robot}", json.dumps(mimic_obs_list))
+                redis_client.mset({
+                    f"action_mimic_{args.robot}": json.dumps(mimic_obs_list),
+                    f"action_mimic_clean_{args.robot}": json.dumps(clean_mimic_obs.tolist()),
+                    f"action_mimic_frame_{args.robot}": global_frame_id,
+                })
                 redis_client.set(f"action_hand_{args.robot}", json.dumps(DEFAULT_ACTION_HAND[args.robot].tolist()))
                 last_mimic_obs = mimic_obs
+                last_clean_mimic_obs = clean_mimic_obs
                 # Print or log it
                 print(
                     f"Loop {loop_idx:3d} step {t_step:4d}/{num_steps} "
@@ -356,10 +370,17 @@ def main(args, xml_file, robot_base):
         time_back_to_default = 2.0
         for i in range(int(time_back_to_default / control_dt)):
             interp_mimic_obs = last_mimic_obs + (DEFAULT_MIMIC_OBS[args.robot] - last_mimic_obs) * (i / (time_back_to_default / control_dt))
-            redis_client.set(f"action_mimic_{args.robot}", json.dumps(interp_mimic_obs.tolist()))
+            clean_interp = last_clean_mimic_obs + (DEFAULT_MIMIC_OBS[args.robot] - last_clean_mimic_obs) * (i / (time_back_to_default / control_dt))
+            redis_client.mset({
+                f"action_mimic_{args.robot}": json.dumps(interp_mimic_obs.tolist()),
+                f"action_mimic_clean_{args.robot}": json.dumps(clean_interp.tolist()),
+            })
             redis_client.set(f"action_hand_{args.robot}", json.dumps(DEFAULT_ACTION_HAND[args.robot].tolist()))
             time.sleep(control_dt)
-        redis_client.set(f"action_mimic_{args.robot}", json.dumps(DEFAULT_MIMIC_OBS[args.robot].tolist()))
+        redis_client.mset({
+            f"action_mimic_{args.robot}": json.dumps(DEFAULT_MIMIC_OBS[args.robot].tolist()),
+            f"action_mimic_clean_{args.robot}": json.dumps(DEFAULT_MIMIC_OBS[args.robot].tolist()),
+        })
         redis_client.set(f"action_hand_{args.robot}", json.dumps(DEFAULT_ACTION_HAND[args.robot].tolist()))
         last_mimic_obs = DEFAULT_MIMIC_OBS[args.robot]
         exit()
@@ -369,10 +390,17 @@ def main(args, xml_file, robot_base):
         time_back_to_default = 2.0
         for i in range(int(time_back_to_default / control_dt)):
             interp_mimic_obs = last_mimic_obs + (DEFAULT_MIMIC_OBS[args.robot] - last_mimic_obs) * (i / (time_back_to_default / control_dt))
-            redis_client.set(f"action_mimic_{args.robot}", json.dumps(interp_mimic_obs.tolist()))
+            clean_interp = last_clean_mimic_obs + (DEFAULT_MIMIC_OBS[args.robot] - last_clean_mimic_obs) * (i / (time_back_to_default / control_dt))
+            redis_client.mset({
+                f"action_mimic_{args.robot}": json.dumps(interp_mimic_obs.tolist()),
+                f"action_mimic_clean_{args.robot}": json.dumps(clean_interp.tolist()),
+            })
             redis_client.set(f"action_hand_{args.robot}", json.dumps(DEFAULT_ACTION_HAND[args.robot].tolist()))
             time.sleep(control_dt)
-        redis_client.set(f"action_mimic_{args.robot}", json.dumps(DEFAULT_MIMIC_OBS[args.robot].tolist()))
+        redis_client.mset({
+            f"action_mimic_{args.robot}": json.dumps(DEFAULT_MIMIC_OBS[args.robot].tolist()),
+            f"action_mimic_clean_{args.robot}": json.dumps(DEFAULT_MIMIC_OBS[args.robot].tolist()),
+        })
         redis_client.set(f"action_hand_{args.robot}", json.dumps(DEFAULT_ACTION_HAND[args.robot].tolist()))
         last_mimic_obs = DEFAULT_MIMIC_OBS[args.robot]
         exit()

@@ -1,0 +1,76 @@
+Policy loaded from 
+legged_gym/logs/g1_stu_rl/0529_twist_rlbcstu/traced/0529_twist_rlbcstu-36500-jit
+.pt
+Degrees of Freedom (DoF) names and their order:
+DoF 0: pelvis
+DoF 1: pelvis
+DoF 2: pelvis
+DoF 3: pelvis
+DoF 4: pelvis
+DoF 5: pelvis
+DoF 6: left_hip_pitch_joint
+DoF 7: left_hip_roll_joint
+DoF 8: left_hip_yaw_joint
+DoF 9: left_knee_joint
+DoF 10: left_ankle_pitch_joint
+DoF 11: left_ankle_roll_joint
+DoF 12: right_hip_pitch_joint
+DoF 13: right_hip_roll_joint
+DoF 14: right_hip_yaw_joint
+DoF 15: right_knee_joint
+DoF 16: right_ankle_pitch_joint
+DoF 17: right_ankle_roll_joint
+DoF 18: waist_yaw_joint
+DoF 19: waist_roll_joint
+DoF 20: waist_pitch_joint
+DoF 21: left_shoulder_pitch_joint
+DoF 22: left_shoulder_roll_joint
+DoF 23: left_shoulder_yaw_joint
+DoF 24: left_elbow_joint
+DoF 25: left_wrist_roll_joint
+DoF 26: right_shoulder_pitch_joint
+DoF 27: right_shoulder_roll_joint
+DoF 28: right_shoulder_yaw_joint
+DoF 29: right_elbow_joint
+DoF 30: right_wrist_roll_joint
+Motor (Actuator) names and their IDs:
+Motor ID 0: left_hip_pitch_joint
+Motor ID 1: left_hip_roll_joint
+Motor ID 2: left_hip_yaw_joint
+Motor ID 3: left_knee_joint
+Motor ID 4: left_ankle_pitch_joint
+Motor ID 5: left_ankle_roll_joint
+Motor ID 6: right_hip_pitch_joint
+Motor ID 7: right_hip_roll_joint
+Motor ID 8: right_hip_yaw_joint
+Motor ID 9: right_knee_joint
+Motor ID 10: right_ankle_pitch_joint
+Motor ID 11: right_ankle_roll_joint
+Motor ID 12: waist_yaw_joint
+Motor ID 13: waist_roll_joint
+Motor ID 14: waist_pitch_joint
+Motor ID 15: left_shoulder_pitch_joint
+Motor ID 16: left_shoulder_roll_joint
+Motor ID 17: left_shoulder_yaw_joint
+Motor ID 18: left_elbow_joint
+Motor ID 19: left_wrist_roll_joint
+Motor ID 20: right_shoulder_pitch_joint
+Motor ID 21: right_shoulder_roll_joint
+Motor ID 22: right_shoulder_yaw_joint
+Motor ID 23: right_elbow_joint
+Motor ID 24: right_wrist_roll_joint
+Saving video to wm_demo_outputs/demo_stress/demo_corrupt.mp4
+Simulating...:   0%|          | 0/7599 [00:00<?, ?it/s]Simulating...:   1%|▏         | 99/7599 [00:00<00:07, 988.09it/s]Simulating...:   3%|▎         | 200/7599 [00:00<00:07, 995.42it/s]Simulating...:   4%|▍         | 301/7599 [00:00<00:07, 955.70it/s]Simulating...:   5%|▌         | 402/7599 [00:00<00:07, 976.20it/s]Simulating...:   7%|▋         | 501/7599 [00:00<00:07, 978.21it/s]Simulating...:   8%|▊         | 601/7599 [00:00<00:07, 982.27it/s]Simulating...:   9%|▉         | 704/7599 [00:00<00:06, 997.54it/s]Simulating...:  11%|█         | 812/7599 [00:00<00:06, 1023.49it/s]Simulating...:  12%|█▏        | 915/7599 [00:00<00:06, 1017.99it/s]Simulating...:  13%|█▎        | 1017/7599 [00:01<00:06, 1012.43it/s]Simulating...:  15%|█▍        | 1119/7599 [00:01<00:06, 1008.48it/s]Simulating...:  16%|█▌        | 1220/7599 [00:01<00:06, 1006.04it/s]Simulating...:  17%|█▋        | 1321/7599 [00:01<00:06, 965.86it/s] Simulating...:  19%|█▊        | 1421/7599 [00:01<00:06, 974.64it/s]Simulating...:  20%|██        | 1521/7599 [00:01<00:06, 980.90it/s]Simulating...:  21%|██▏       | 1621/7599 [00:01<00:06, 982.73it/s]Simulating...:  23%|██▎       | 1722/7599 [00:01<00:05, 990.58it/s]Simulating...:  24%|██▍       | 1834/7599 [00:01<00:05, 1028.79it/s]Simulating...:  25%|██▌       | 1937/7599 [00:01<00:05, 1024.11it/s]Simulating...:  27%|██▋       | 2040/7599 [00:02<00:05, 1020.47it/s]Simulating...:  28%|██▊       | 2143/7599 [00:02<00:05, 972.55it/s] Simulating...:  29%|██▉       | 2241/7599 [00:02<00:05, 974.57it/s]Simulating...:  31%|███       | 2341/7599 [00:02<00:05, 978.66it/s]Simulating...:  32%|███▏      | 2442/7599 [00:02<00:05, 987.70it/s]Simulating...:  33%|███▎      | 2541/7599 [00:02<00:05, 985.39it/s]Simulating...:  35%|███▍      | 2641/7599 [00:02<00:05, 988.45it/s]Simulating...:  36%|███▌      | 2747/7599 [00:02<00:04, 1009.63it/s]Simulating...:  37%|███▋      | 2849/7599 [00:02<00:04, 1006.02it/s]Simulating...:  39%|███▉      | 2959/7599 [00:02<00:04, 1033.93it/s]Simulating...:  40%|████      | 3063/7599 [00:03<00:04, 980.13it/s] Simulating...:  42%|████▏     | 3162/7599 [00:03<00:04, 980.88it/s]Simulating...:  43%|████▎     | 3261/7599 [00:03<00:04, 981.73it/s]Simulating...:  44%|████▍     | 3367/7599 [00:03<00:04, 1004.50it/s]Simulating...:  46%|████▌     | 3468/7599 [00:03<00:04, 1002.68it/s]Simulating...:  47%|████▋     | 3569/7599 [00:03<00:04, 1004.26it/s]Simulating...:  48%|████▊     | 3670/7599 [00:03<00:03, 1003.03it/s]Simulating...:  50%|████▉     | 3779/7599 [00:03<00:03, 1028.79it/s]Simulating...:  51%|█████     | 3882/7599 [00:03<00:03, 971.96it/s] Simulating...:  52%|█████▏    | 3981/7599 [00:04<00:03, 976.46it/s]Simulating...:  54%|█████▍    | 4087/7599 [00:04<00:03, 1000.59it/s]Simulating...:  55%|█████▌    | 4188/7599 [00:04<00:03, 998.92it/s] Simulating...:  57%|█████▋    | 4299/7599 [00:04<00:03, 1031.42it/s]Simulating...:  58%|█████▊    | 4403/7599 [00:04<00:03, 977.57it/s] Simulating...:  59%|█████▉    | 4502/7599 [00:04<00:03, 980.60it/s]Simulating...:  61%|██████    | 4602/7599 [00:04<00:03, 986.19it/s]Simulating...:  62%|██████▏   | 4702/7599 [00:04<00:02, 988.45it/s]Simulating...:  63%|██████▎   | 4802/7599 [00:04<00:02, 991.77it/s]Simulating...:  65%|██████▍   | 4902/7599 [00:04<00:02, 989.23it/s]Simulating...:  66%|██████▌   | 5008/7599 [00:05<00:02, 1010.13it/s]Simulating...:  67%|██████▋   | 5110/7599 [00:05<00:02, 1012.14it/s]Simulating...:  69%|██████▊   | 5212/7599 [00:05<00:02, 1011.45it/s]Simulating...:  70%|██████▉   | 5314/7599 [00:05<00:02, 1010.79it/s]Simulating...:  71%|███████▏  | 5420/7599 [00:05<00:02, 1025.21it/s]Simulating...:  73%|███████▎  | 5523/7599 [00:05<00:02, 971.80it/s] Simulating...:  74%|███████▍  | 5622/7599 [00:05<00:02, 976.99it/s]Simulating...:  75%|███████▌  | 5724/7599 [00:05<00:01, 989.43it/s]Simulating...:  77%|███████▋  | 5824/7599 [00:05<00:01, 990.31it/s]Simulating...:  78%|███████▊  | 5924/7599 [00:05<00:01, 992.33it/s]Simulating...:  79%|███████▉  | 6030/7599 [00:06<00:01, 1012.36it/s]Simulating...:  81%|████████  | 6132/7599 [00:06<00:01, 1011.02it/s]Simulating...:  82%|████████▏ | 6234/7599 [00:06<00:01, 1008.65it/s]Simulating...:  83%|████████▎ | 6335/7599 [00:06<00:01, 1008.63it/s]Simulating...:  85%|████████▍ | 6441/7599 [00:06<00:01, 972.25it/s] Simulating...:  86%|████████▌ | 6541/7599 [00:06<00:01, 976.71it/s]Simulating...:  87%|████████▋ | 6645/7599 [00:06<00:00, 995.00it/s]Simulating...:  89%|████████▉ | 6745/7599 [00:06<00:00, 995.70it/s]Simulating...:  90%|█████████ | 6845/7599 [00:06<00:00, 994.98it/s]Simulating...:  91%|█████████▏| 6945/7599 [00:06<00:00, 994.49it/s]Simulating...:  93%|█████████▎| 7049/7599 [00:07<00:00, 1007.99it/s]Simulating...:  94%|█████████▍| 7150/7599 [00:07<00:00, 1004.33it/s]Simulating...:  95%|█████████▌| 7251/7599 [00:07<00:00, 1004.83it/s]Simulating...:  97%|█████████▋| 7353/7599 [00:07<00:00, 1009.20it/s]Simulating...:  98%|█████████▊| 7454/7599 [00:07<00:00, 1005.63it/s]Simulating...:  99%|█████████▉| 7555/7599 [00:07<00:00, 1005.23it/s]Simulating...: 100%|██████████| 7599/7599 [00:07<00:00, 997.36it/s] Rendering 380 cached video frames...
+Video saved to wm_demo_outputs/demo_stress/demo_corrupt.mp4
+Metrics saved to wm_demo_outputs/demo_stress/corrupt_summary.json
+Metrics summary: {'frames': 380, 'joint_rmse': 0.1746303144167182, 'joint_mae': 
+0.12712416577220415, 'max_joint_error': 0.8402330875396729, 'root_error': 
+0.23983291754967512, 'root_velocity_rmse': 0.19908918680494708, 
+'minimum_pelvis_height': 0.7451744533902199, 'maximum_abs_roll': 
+0.11104315214634258, 'maximum_abs_pitch': 0.24495689416357766, 'max_tilt': 
+0.24495689416357766, 'root_height_error': 0.0283783780830953, 'root_height_mae':
+0.024942865912710856, 'roll_error': 0.04105034156970727, 'roll_mae': 
+0.03018011820654541, 'pitch_error': 0.07706439691556789, 'pitch_mae': 
+0.06374334665912122, 'yaw_error': 0.4707971210659429, 'yaw_mae': 
+0.37800888218041356}
+

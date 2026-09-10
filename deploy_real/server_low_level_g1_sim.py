@@ -308,7 +308,8 @@ class RealTimePolicyController:
                  video_path="debug_sim.mp4",
                  metrics_out=None,
                  sim_duration=100000.0,
-                 headless=False):
+                 headless=False,
+                 sync_reference=False):
 
         self.redis_client = None
         try:
@@ -318,6 +319,7 @@ class RealTimePolicyController:
 
         self.device = device
         self.headless = bool(headless)
+        self.sync_reference = sync_reference
         self.policy_obs_dim = _detect_policy_obs_dim(policy_path, device)
         self.use_anyadapter = _should_use_anyadapter(
             policy_path, device, use_anyadapter, self.policy_obs_dim
@@ -429,7 +431,7 @@ class RealTimePolicyController:
         self.default_mimic_obs = DEFAULT_MIMIC_OBS["g1"]
         self.mujoco_default_dof_pos = np.concatenate([
             np.array([0, 0, 0.793]),
-            np.array([0, 0, 0, 1]),
+            np.array([1, 0, 0, 0]),
              np.array([-0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
                 -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
                 0.0, 0.0, 0.0, # torso (1)
@@ -581,7 +583,7 @@ class RealTimePolicyController:
         proprio_json = json.dumps(self.proprio_history_buf[0].tolist())
         self.redis_client.set("state_body_g1", proprio_json)
         self.redis_client.set("state_hand_g1", json.dumps(np.zeros(14).tolist()))
-        self.redis_client.set("sim_ready_g1", str(time.time()))
+        self.redis_client.set("sim_ready_g1", -1)
         wall_start = time.perf_counter()
         try:
             for i in pbar:
@@ -606,13 +608,35 @@ class RealTimePolicyController:
                     self.redis_client.set("state_body_g1", json.dumps(obs_proprio.tolist()))
                     self.redis_client.set("state_hand_g1", json.dumps(np.zeros(14).tolist()))
 
-                    # Use a safe standing reference until a fresh Redis frame arrives.
-                    action_mimic_full = self._read_mimic_reference()
+                    # Paired evaluation reads the policy input and clean target atomically.
+                    if self.sync_reference:
+                        frame_id = i // self.sim_decimation
+                        self.redis_client.set("sim_ready_g1", frame_id)
+                        deadline = time.monotonic() + 30.0
+                        while True:
+                            raw, clean_raw, received = self.redis_client.mget(
+                                "action_mimic_g1", "action_mimic_clean_g1", "action_mimic_frame_g1"
+                            )
+                            if received is not None and int(received) == frame_id:
+                                break
+                            if time.monotonic() > deadline:
+                                raise TimeoutError(f"Missing reference frame {frame_id}")
+                            time.sleep(0.001)
+                    elif self.metrics is not None:
+                        raw, clean_raw = self.redis_client.mget(
+                            "action_mimic_g1", "action_mimic_clean_g1"
+                        )
+                    else:
+                        action_mimic_full = self._read_mimic_reference()
+                    if self.sync_reference or self.metrics is not None:
+                        action_mimic_full, _, _ = parse_mimic_msg(raw, expected_dim=33)
                     action_mimic, wrist_dof_pos = extract_mimic_obs_to_body_and_wrist(
                         action_mimic_full
                     )
 
                     if self.metrics is not None:
+                        clean_full, _, _ = parse_mimic_msg(clean_raw, expected_dim=33)
+                        clean_reference, _ = extract_mimic_obs_to_body_and_wrist(clean_full)
                         root_velocity = quat_rotate_inverse(
                             np.asarray(
                                 [quat[1], quat[2], quat[3], quat[0]],
@@ -621,7 +645,7 @@ class RealTimePolicyController:
                             np.asarray(self.data.qvel[:3], dtype=np.float32).reshape(1, 3),
                         ).reshape(3)
                         self.metrics.update(
-                            action_mimic,
+                            clean_reference,
                             body_dof_pos,
                             rpy,
                             self.data.xpos[self.model.body("pelvis").id][2],
@@ -708,7 +732,7 @@ class RealTimePolicyController:
                     time.sleep(remaining)
         except Exception as e:
             print(f"Error in run: {e}")
-            pass
+            raise
         finally:
             if mp4_writer is not None:
                 print(f"Rendering {len(video_frames)} cached video frames...")
@@ -748,6 +772,7 @@ def main_low_level_sim(args):
         metrics_out=args.metrics_out,
         sim_duration=args.sim_duration,
         headless=args.headless,
+        sync_reference=args.sync_reference,
     )
     controller.run()
 
@@ -770,6 +795,7 @@ if __name__ == "__main__":
     )
                         
     parser.add_argument("--record_video", action="store_true", help="Record a video")
+    parser.add_argument("--sync-reference", action="store_true", help="Request each motion frame exactly once for paired comparisons.")
     parser.add_argument(
         "--video_path",
         default="debug_sim.mp4",
