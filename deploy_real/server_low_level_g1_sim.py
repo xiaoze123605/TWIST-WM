@@ -12,6 +12,7 @@ import mujoco.viewer as mjv
 from tqdm import tqdm
 from data_utils.params import DEFAULT_MIMIC_OBS
 import os
+from pathlib import Path
 from data_utils.rot_utils import quatToEuler, quat_rotate_inverse
 from deploy_safety import MIMIC_OBS_DIM, parse_mimic_msg
 
@@ -94,6 +95,109 @@ def aggregate_wrist_dof_pos(body_dof_pos, wrist_dof_pos):
     whole_body_pd_target[wrist_ids] = wrist_dof_pos
     
     return whole_body_pd_target
+
+
+class MotionDemoMetrics:
+    """Small streaming accumulator for the clean/corrupt/WM demo."""
+
+    def __init__(self):
+        self.frames = 0
+        self.joint_squared_error = 0.0
+        self.joint_absolute_error = 0.0
+        self.max_joint_error = 0.0
+        self.root_squared_error = np.zeros(4, dtype=np.float64)
+        self.root_absolute_error = np.zeros(4, dtype=np.float64)
+        self.root_velocity_squared_error = 0.0
+        self.root_velocity_values = 0
+        self.minimum_pelvis_height = float("inf")
+        self.maximum_abs_roll = 0.0
+        self.maximum_abs_pitch = 0.0
+
+    def update(self, action_mimic, body_dof_pos, rpy, pelvis_height, root_velocity):
+        reference = np.asarray(action_mimic, dtype=np.float64)
+        actual_dof = np.asarray(body_dof_pos, dtype=np.float64)
+        orientation = np.asarray(rpy, dtype=np.float64)
+        actual_root_velocity = np.asarray(root_velocity, dtype=np.float64)
+        if reference.shape != (31,) or actual_dof.shape != (23,):
+            raise ValueError(
+                f"metrics expect 31-D reference and 23-D joints, got "
+                f"{reference.shape}/{actual_dof.shape}"
+            )
+
+        joint_error = actual_dof - reference[8:31]
+        root_error = np.array(
+            [
+                float(pelvis_height) - reference[0],
+                orientation[0] - reference[1],
+                orientation[1] - reference[2],
+                np.arctan2(
+                    np.sin(orientation[2] - reference[3]),
+                    np.cos(orientation[2] - reference[3]),
+                ),
+            ],
+            dtype=np.float64,
+        )
+        velocity_error = actual_root_velocity - reference[4:7]
+        if not all(
+            np.all(np.isfinite(value))
+            for value in (joint_error, root_error, velocity_error)
+        ):
+            return
+
+        self.frames += 1
+        self.joint_squared_error += float(np.sum(joint_error ** 2))
+        self.joint_absolute_error += float(np.sum(np.abs(joint_error)))
+        self.max_joint_error = max(
+            self.max_joint_error, float(np.max(np.abs(joint_error)))
+        )
+        self.root_squared_error += root_error ** 2
+        self.root_absolute_error += np.abs(root_error)
+        self.root_velocity_squared_error += float(np.sum(velocity_error ** 2))
+        self.root_velocity_values += int(velocity_error.size)
+        self.minimum_pelvis_height = min(
+            self.minimum_pelvis_height, float(pelvis_height)
+        )
+        self.maximum_abs_roll = max(self.maximum_abs_roll, abs(float(orientation[0])))
+        self.maximum_abs_pitch = max(self.maximum_abs_pitch, abs(float(orientation[1])))
+
+    def summary(self):
+        if self.frames == 0:
+            return {"frames": 0, "status": "no valid policy frames recorded"}
+        root_rmse = np.sqrt(self.root_squared_error / self.frames)
+        root_mae = self.root_absolute_error / self.frames
+        names = ("root_height", "roll", "pitch", "yaw")
+        result = {
+            "frames": self.frames,
+            "joint_rmse": float(
+                np.sqrt(self.joint_squared_error / (self.frames * 23))
+            ),
+            "joint_mae": float(
+                self.joint_absolute_error / (self.frames * 23)
+            ),
+            "max_joint_error": self.max_joint_error,
+            "root_error": float(np.sqrt(np.mean(self.root_squared_error / self.frames))),
+            "root_velocity_rmse": float(
+                np.sqrt(self.root_velocity_squared_error / self.root_velocity_values)
+            ),
+            "minimum_pelvis_height": self.minimum_pelvis_height,
+            "maximum_abs_roll": self.maximum_abs_roll,
+            "maximum_abs_pitch": self.maximum_abs_pitch,
+            "max_tilt": max(self.maximum_abs_roll, self.maximum_abs_pitch),
+        }
+        for index, name in enumerate(names):
+            result[f"{name}_error"] = float(root_rmse[index])
+            result[f"{name}_mae"] = float(root_mae[index])
+        return result
+
+    def save(self, output_path):
+        path = Path(output_path).expanduser()
+        if path.suffix.lower() != ".json":
+            path = path / "summary.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        summary = self.summary()
+        path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        print(f"Metrics saved to {path}")
+        return summary
 
 
 def _detect_policy_obs_dim(policy_path, device):
@@ -200,7 +304,11 @@ class RealTimePolicyController:
                  use_anyadapter=False,
                  anyadapter_ema_alpha=0.0,
                  debug_policy_stats=False,
-                 debug_policy_stats_steps=20):
+                 debug_policy_stats_steps=20,
+                 video_path="debug_sim.mp4",
+                 metrics_out=None,
+                 sim_duration=100000.0,
+                 headless=False):
 
         self.redis_client = None
         try:
@@ -209,6 +317,7 @@ class RealTimePolicyController:
             print(f"Error connecting to Redis: {e}")
 
         self.device = device
+        self.headless = bool(headless)
         self.policy_obs_dim = _detect_policy_obs_dim(policy_path, device)
         self.use_anyadapter = _should_use_anyadapter(
             policy_path, device, use_anyadapter, self.policy_obs_dim
@@ -277,16 +386,26 @@ class RealTimePolicyController:
             print(f"Motor ID {i}: {motor_name}")
             
 
-        self.viewer = mjv.launch_passive(self.model, self.data, show_left_ui=False, show_right_ui=False)
-        self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_PERTFORCE] = 0
-        self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = 0
-        self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = 0
-        self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_COM] = 0
-        self.viewer.cam.distance = 2.0
+        if self.headless:
+            self.viewer = None
+            self.camera = mujoco.MjvCamera()
+            self.camera.distance = 2.0
+        else:
+            self.viewer = mjv.launch_passive(
+                self.model, self.data, show_left_ui=False, show_right_ui=False
+            )
+            self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_PERTFORCE] = 0
+            self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = 0
+            self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = 0
+            self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_COM] = 0
+            self.viewer.cam.distance = 2.0
+            self.camera = self.viewer.cam
 
         # Example defaults & placeholders
         self.num_actions = 23
-        self.sim_duration = 100000.0
+        self.sim_duration = float(sim_duration)
+        if self.sim_duration <= 0.0:
+            raise ValueError("sim_duration must be positive")
         self.sim_dt = 0.001
         self.sim_decimation = 20
 
@@ -353,6 +472,9 @@ class RealTimePolicyController:
             self.proprio_history_buf.append(np.zeros(self.n_proprio))
 
         self.record_video = record_video
+        self.video_path = Path(video_path).expanduser()
+        self.metrics_out = metrics_out
+        self.metrics = MotionDemoMetrics() if metrics_out else None
         self.debug_policy_stats = debug_policy_stats
         self.debug_policy_stats_steps = int(debug_policy_stats_steps)
         self._debug_policy_stats_count = 0
@@ -439,11 +561,13 @@ class RealTimePolicyController:
         # Optionally record video
         if self.record_video:
             import imageio
-            video_name = "debug_sim.mp4"
-            print(f"Saving video to {video_name}")
-            mp4_writer = imageio.get_writer(video_name, fps=50)
+            self.video_path.parent.mkdir(parents=True, exist_ok=True)
+            print(f"Saving video to {self.video_path}")
+            mp4_writer = imageio.get_writer(str(self.video_path), fps=50)
+            video_frames = []
         else:
             mp4_writer = None
+            video_frames = None
 
         self.reset_sim()
         self.reset(self.mujoco_default_dof_pos)
@@ -457,6 +581,8 @@ class RealTimePolicyController:
         proprio_json = json.dumps(self.proprio_history_buf[0].tolist())
         self.redis_client.set("state_body_g1", proprio_json)
         self.redis_client.set("state_hand_g1", json.dumps(np.zeros(14).tolist()))
+        self.redis_client.set("sim_ready_g1", str(time.time()))
+        wall_start = time.perf_counter()
         try:
             for i in pbar:
                 
@@ -485,6 +611,22 @@ class RealTimePolicyController:
                     action_mimic, wrist_dof_pos = extract_mimic_obs_to_body_and_wrist(
                         action_mimic_full
                     )
+
+                    if self.metrics is not None:
+                        root_velocity = quat_rotate_inverse(
+                            np.asarray(
+                                [quat[1], quat[2], quat[3], quat[0]],
+                                dtype=np.float32,
+                            ).reshape(1, 4),
+                            np.asarray(self.data.qvel[:3], dtype=np.float32).reshape(1, 3),
+                        ).reshape(3)
+                        self.metrics.update(
+                            action_mimic,
+                            body_dof_pos,
+                            rpy,
+                            self.data.xpos[self.model.body("pelvis").id][2],
+                            root_velocity,
+                        )
 
                     obs_full = np.concatenate([action_mimic, obs_proprio])
                     obs_hist = np.array(self.proprio_history_buf).flatten()
@@ -537,16 +679,20 @@ class RealTimePolicyController:
                     pd_target = scaled_actions + self.default_dof_pos
                     pd_target = aggregate_wrist_dof_pos(pd_target, wrist_dof_pos)
                     # debug draw velocity arrow if you want
-                    self.viewer.user_scn.ngeom = 0
-                    draw_root_velocity(self.model, self.data, self.viewer, [0,0,0], 0, "pelvis", [1,0,0,1])
+                    if self.viewer is not None:
+                        self.viewer.user_scn.ngeom = 0
+                        draw_root_velocity(
+                            self.model, self.data, self.viewer, [0,0,0], 0,
+                            "pelvis", [1,0,0,1]
+                        )
                     
                     # make camera follow the pelvis
                     pelvis_pos = self.data.xpos[self.model.body("pelvis").id]
-                    self.viewer.cam.lookat = pelvis_pos
-                    self.viewer.sync()
-                    if mp4_writer is not None:
-                        img = self.viewer.read_pixels()
-                        mp4_writer.append_data(img)
+                    self.camera.lookat = pelvis_pos
+                    if self.viewer is not None:
+                        self.viewer.sync()
+                    if video_frames is not None:
+                        video_frames.append(self.data.qpos.copy())
 
                 # PD control
                 torque = (pd_target - whole_body_dof) * self.stiffness - whole_body_dof_vel * self.damping
@@ -556,18 +702,36 @@ class RealTimePolicyController:
                 
                 mujoco.mj_step(self.model, self.data)
                 # sleep to maintain real-time pace
-                elapsed = time.time() - t_start
-                if elapsed < self.sim_dt:
-                    time.sleep(self.sim_dt - elapsed)
+                target_wall_time = wall_start + (i + 1) * self.sim_dt
+                remaining = target_wall_time - time.perf_counter()
+                if remaining > 0.0:
+                    time.sleep(remaining)
         except Exception as e:
             print(f"Error in run: {e}")
             pass
         finally:
             if mp4_writer is not None:
+                print(f"Rendering {len(video_frames)} cached video frames...")
+                video_renderer = mujoco.Renderer(self.model, height=480, width=640)
+                render_data = mujoco.MjData(self.model)
+                for qpos in video_frames:
+                    render_data.qpos[:] = qpos
+                    mujoco.mj_forward(self.model, render_data)
+                    self.camera.lookat = render_data.xpos[
+                        self.model.body("pelvis").id
+                    ]
+                    video_renderer.update_scene(render_data, camera=self.camera)
+                    mp4_writer.append_data(video_renderer.render())
                 mp4_writer.close()
-                print("Video saved")
+                video_renderer.close()
+                print(f"Video saved to {self.video_path}")
 
-            self.viewer.close()
+            if self.metrics is not None:
+                summary = self.metrics.save(self.metrics_out)
+                print(f"Metrics summary: {summary}")
+
+            if self.viewer is not None:
+                self.viewer.close()
 
 
 def main_low_level_sim(args):
@@ -580,6 +744,10 @@ def main_low_level_sim(args):
         anyadapter_ema_alpha=args.anyadapter_ema_alpha,
         debug_policy_stats=args.debug_policy_stats,
         debug_policy_stats_steps=args.debug_policy_stats_steps,
+        video_path=args.video_path,
+        metrics_out=args.metrics_out,
+        sim_duration=args.sim_duration,
+        headless=args.headless,
     )
     controller.run()
 
@@ -591,8 +759,10 @@ if __name__ == "__main__":
     parser.add_argument("--xml_file", default=os.path.join(HERE, "../assets/g1/g1_sim2sim_with_wrist_roll.xml"), help="Mujoco XML file")
     
     parser.add_argument("--policy_path",  help="Path to the policy",
-                        default="../assets/twist_general_motion_tracker.pt"
-                        )
+                        default=os.path.join(
+                            HERE,
+                            "../legged_gym/logs/g1_stu_rl/0529_twist_rlbcstu/traced/0529_twist_rlbcstu-36500-jit.pt",
+                        ))
     parser.add_argument(
         "--device",
         default="cuda",
@@ -600,6 +770,27 @@ if __name__ == "__main__":
     )
                         
     parser.add_argument("--record_video", action="store_true", help="Record a video")
+    parser.add_argument(
+        "--video_path",
+        default="debug_sim.mp4",
+        help="Output MP4 path used with --record_video.",
+    )
+    parser.add_argument(
+        "--metrics_out",
+        default=None,
+        help="JSON file or directory for the compact tracking summary.",
+    )
+    parser.add_argument(
+        "--sim_duration",
+        type=float,
+        default=100000.0,
+        help="Simulation duration in seconds; use about 8 for the selected demo motion.",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without a live viewer and render cached states after simulation.",
+    )
     parser.add_argument("--use_anyadapter", action="store_true", help="Use AnyAdapter runtime wrapper")
     parser.add_argument("--anyadapter_ema_alpha", type=float, default=0.0, help="EMA smoothing for AnyAdapter action output; use 0 for fair A/B/C comparison")
     parser.add_argument("--debug_policy_stats", action="store_true", help="Print reference/proprio/action statistics for the first few policy steps")

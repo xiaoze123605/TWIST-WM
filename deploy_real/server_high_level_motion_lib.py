@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import sys
 import time
 import redis
 import json
@@ -10,6 +11,10 @@ from rich import print
 import os
 import mujoco
 from mujoco.viewer import launch_passive
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 # ---------------------------------------------------------------------
 # Example imports: adapt to your actual file structure
 # ---------------------------------------------------------------------
@@ -17,6 +22,14 @@ from pose.utils.motion_lib_pkl import MotionLib
 from data_utils.rot_utils import euler_from_quaternion, quat_rotate_inverse, quat_rotate_inverse_torch
 
 from data_utils.params import DEFAULT_MIMIC_OBS, DEFAULT_ACTION_HAND
+from motion_world_model.runtime import (
+    MotionReferenceRefiner,
+    RuntimeReferenceCorruptor,
+    reinsert_wrist_roll,
+    remove_wrist_roll,
+    resolve_checkpoint_path,
+    wrap_reference_yaw,
+)
 
 
 def _wrap_to_pi(angle):
@@ -108,6 +121,26 @@ def build_mimic_obs(
             root_vel.detach().cpu().numpy().squeeze(), root_ang_vel.detach().cpu().numpy().squeeze()
 
 
+def process_mimic_reference(mimic_obs, reference_mode, corruptor=None, refiner=None):
+    """Apply the demo pipeline while leaving the two wrist-roll values untouched."""
+    reference_31d, wrists = remove_wrist_roll(mimic_obs)
+    if reference_mode == "clean":
+        processed = reference_31d
+    else:
+        if corruptor is None:
+            raise ValueError(f"{reference_mode} mode requires a corruptor")
+        corrupted = corruptor.corrupt(reference_31d)
+        if reference_mode == "corrupt":
+            processed = wrap_reference_yaw(corrupted)
+        elif reference_mode == "wm":
+            if refiner is None:
+                raise ValueError("wm mode requires a MotionReferenceRefiner")
+            processed = refiner.refine(corrupted)
+        else:
+            raise ValueError(f"unknown reference mode: {reference_mode}")
+    return reinsert_wrist_roll(processed, wrists)
+
+
 def main(args, xml_file, robot_base):
     if args.motion_speed <= 0.0:
         raise ValueError("--motion-speed must be > 0")
@@ -115,6 +148,8 @@ def main(args, xml_file, robot_base):
         raise ValueError("--motion-scale must be in [0, 1]")
     if not (0.0 <= args.hip_yaw_scale <= 1.0):
         raise ValueError("--hip-yaw-scale must be in [0, 1]")
+    if args.sim_ready_timeout <= 0.0:
+        raise ValueError("--sim-ready-timeout must be > 0")
 
     if args.vis:
         sim_model = mujoco.MjModel.from_xml_path(xml_file)
@@ -139,6 +174,10 @@ def main(args, xml_file, robot_base):
             
     # 1. Connect to Redis
     redis_client = redis.Redis(host="localhost", port=6379, db=0)
+    redis_client.ping()
+    sim_ready_key = f"sim_ready_{args.robot}"
+    if args.wait_for_sim_ready:
+        redis_client.delete(sim_ready_key)
 
     # 2. Load motion library
     device = (
@@ -146,6 +185,21 @@ def main(args, xml_file, robot_base):
     ) if args.device == "auto" else args.device
     print(f"[Motion Server] Torch device: {device}")
     motion_lib = MotionLib(args.motion_file, device=device)
+
+    corruptor = None
+    refiner = None
+    if args.reference_mode != "clean":
+        corruptor = RuntimeReferenceCorruptor.from_preset(
+            args.corruption_preset, seed=args.seed
+        )
+    if args.reference_mode == "wm":
+        checkpoint_path = resolve_checkpoint_path(args.wm_checkpoint)
+        refiner = MotionReferenceRefiner(checkpoint_path, device=device)
+        print(f"[Motion Server] Motion-WM checkpoint: {checkpoint_path}")
+    print(
+        f"[Motion Server] Reference mode: {args.reference_mode}; "
+        f"corruption={args.corruption_preset}; seed={args.seed}"
+    )
 
     initial_motion_id = torch.zeros(1, dtype=torch.long, device=device)
     initial_motion_time = torch.zeros(1, dtype=torch.float, device=device)
@@ -195,6 +249,18 @@ def main(args, xml_file, robot_base):
     motion_id = torch.tensor([0], device=device, dtype=torch.long)
     motion_length = motion_lib.get_motion_length(motion_id)
     num_steps = int(motion_length / (control_dt * args.motion_speed))
+
+    if args.wait_for_sim_ready:
+        print(f"[Motion Server] Waiting for {sim_ready_key}...")
+        deadline = time.monotonic() + args.sim_ready_timeout
+        while redis_client.get(sim_ready_key) is None:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"MuJoCo did not publish {sim_ready_key} within "
+                    f"{args.sim_ready_timeout:.1f}s"
+                )
+            time.sleep(0.01)
+        print("[Motion Server] MuJoCo ready; starting reference frame 0")
     
     print(
         f"[Motion Server] Streaming for {num_steps} steps at dt={control_dt:.3f} seconds, "
@@ -231,6 +297,12 @@ def main(args, xml_file, robot_base):
                 )
                 mimic_obs = DEFAULT_MIMIC_OBS[args.robot] + args.motion_scale * (
                     mimic_obs - DEFAULT_MIMIC_OBS[args.robot]
+                )
+                mimic_obs = process_mimic_reference(
+                    mimic_obs,
+                    args.reference_mode,
+                    corruptor=corruptor,
+                    refiner=refiner,
                 )
                 if vis_root_vel:
                     root_vel_list.append(root_vel)
@@ -309,7 +381,7 @@ def main(args, xml_file, robot_base):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--motion_file", help="Path to your *.pkl motion file for MotionLib", 
-                        default="/home/yanjieze/projects/g1_wbc/humanoid-motion-imitation/track_dataset/twist_motion_dataset/mocap/0.pkl")
+                        default=os.path.join(REPO_ROOT, "track_dataset/twist_motion_dataset/accad/B3___walk1.pkl"))
     parser.add_argument("--robot", type=str, default="g1", choices=["g1"])
     parser.add_argument(
         "--device",
@@ -338,6 +410,35 @@ if __name__ == "__main__":
         action="store_true",
         help="Publish the dataset's absolute yaw instead of making the first frame yaw zero.",
     )
+    parser.add_argument(
+        "--reference-mode",
+        choices=("clean", "corrupt", "wm"),
+        default="clean",
+        help="Reference path used by the frozen TWIST policy.",
+    )
+    parser.add_argument(
+        "--wm-checkpoint",
+        default=None,
+        help="Motion-WM best.pt. Defaults to full_stable_v2, then another existing best.pt.",
+    )
+    parser.add_argument(
+        "--corruption-preset",
+        choices=("formal", "demo_stress"),
+        default="formal",
+        help="formal matches training; demo_stress is visualization-only.",
+    )
+    parser.add_argument("--seed", type=int, default=42, help="Deterministic corruption seed.")
+    parser.add_argument(
+        "--wait-for-sim-ready",
+        action="store_true",
+        help="Wait for the low-level MuJoCo process before publishing frame 0.",
+    )
+    parser.add_argument(
+        "--sim-ready-timeout",
+        type=float,
+        default=30.0,
+        help="Seconds to wait when --wait-for-sim-ready is used.",
+    )
     parser.add_argument("--vis", action="store_true", help="Visualize the motion")
     args = parser.parse_args()
 
@@ -346,6 +447,7 @@ if __name__ == "__main__":
     print("Steps: ", args.steps)
     print("Motion speed: ", args.motion_speed)
     print("Motion scale: ", args.motion_scale)
+    print("Reference mode: ", args.reference_mode)
     
     HERE = os.path.dirname(os.path.abspath(__file__))
     

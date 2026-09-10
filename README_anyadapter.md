@@ -87,6 +87,38 @@ python server_low_level_g1_sim.py \
 `[AnyAdapter] Detected 2635-D AnyAdapter policy; enabling runtime history wrapper automatically.`
 （若打印 Any2Track / heading-aware 则为误判，说明用了没有输入守卫的旧文件）。
 
+## 导出 DTERA checkpoint（g1_stu_anyadapter_dtera）
+
+`legged_gym/scripts/export_twist_dtera_jit.py`
+
+针对 DTERA 架构（`TwistDTERAActorCritic`：双支路 + demand/confidence/risk 门控 +
+跟踪误差历史编码器 + 误差趋势/风险预测器）的导出脚本，与双支路脚本同样的
+严格 key 校验 + 4 项验证，观测维度为 **3695**（1155 base + 20×74 动力学历史 +
+20×53 跟踪误差历史）：
+
+```bash
+cd /home/hank/TWIST（anyadapter）
+
+CKPT=legged_gym/logs/g1_twist_dtera_revision4/dtera_revision4_frozen_output_bias_overnight/model_4800.pt
+
+# 训练配置门控导出（gate_mode=demand_only）
+/home/hank/anaconda3/envs/twist/bin/python legged_gym/scripts/export_twist_dtera_jit.py \
+  --ckpt ${CKPT} \
+  --device cpu
+
+# 其他门控模式（与 evaluate_dual_branch.py 的消融模式一致）
+# --gate_mode {off,demand_only,demand_confidence,full}
+# --confidence_gate_strength 1.0（demand_confidence / full 建议）
+# --independent_branch_gates --tracking_demand_mode smoothstep
+# --tracking_demand_low 0.30 --tracking_demand_high 0.80（selective 配置）
+```
+
+输出：`<run_dir>/traced/<run>-<迭代>-dtera-<gate_mode>-jit.pt`
+
+注意：DTERA 的 3695 维观测不在 deploy server 的探测列表
+（1155/2635/2637/7001）里，server 会报告无法识别而不是误判；导出文件自带
+维度守卫，只接受 3695 维输入，可直接在仿真/自定义加载器中使用。
+
 ## 训练与恢复（dual_formal_v2，wd 修复版）
 
 ### 启动全新训练
